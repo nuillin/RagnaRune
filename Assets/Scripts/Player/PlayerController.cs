@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 using RagnaRune.Combat;
 using RagnaRune.Core;
 using RagnaRune.Cards;
@@ -7,8 +6,9 @@ using RagnaRune.Cards;
 namespace RagnaRune.Player
 {
     /// <summary>
-    /// Handles player input, movement and click-to-target.
-    /// Works with both the new Input System and legacy Input.GetKey fallback.
+    /// Handles player input, movement, click-to-target, and spell/ranged hotkeys.
+    /// Uses the legacy Input Manager only — no dependency on the New Input System package.
+    /// If you want New Input System, remove this file and implement PlayerInputActions instead.
     /// </summary>
     [RequireComponent(typeof(Rigidbody2D))]
     [RequireComponent(typeof(CombatManager))]
@@ -23,10 +23,14 @@ namespace RagnaRune.Player
         public LayerMask EnemyLayer;
         public LayerMask InteractableLayer;
 
-        [Header("Spell Hotkeys")]
+        [Header("Combat Hotkeys — Magic")]
         public KeyCode FireSpellKey  = KeyCode.Alpha1;
         public KeyCode WaterSpellKey = KeyCode.Alpha2;
         public KeyCode HolySpellKey  = KeyCode.Alpha3;
+        public KeyCode WindSpellKey  = KeyCode.Alpha4;
+
+        [Header("Combat Hotkeys — Ranged")]
+        public KeyCode RangedAttackKey = KeyCode.R;
 
         // ── References ────────────────────────────────────────────────────────
         private Rigidbody2D    _rb;
@@ -53,14 +57,14 @@ namespace RagnaRune.Player
 
         private void OnEnable()
         {
-            _combat.OnPlayerDefeated  += OnDied;
-            _combat.OnEnemyDefeated   += OnEnemyDefeated;
+            _combat.OnPlayerDefeated += OnDied;
+            _combat.OnEnemyDefeated  += OnEnemyDefeated;
         }
 
         private void OnDisable()
         {
-            _combat.OnPlayerDefeated  -= OnDied;
-            _combat.OnEnemyDefeated   -= OnEnemyDefeated;
+            _combat.OnPlayerDefeated -= OnDied;
+            _combat.OnEnemyDefeated  -= OnEnemyDefeated;
         }
 
         // ── Input ─────────────────────────────────────────────────────────────
@@ -72,6 +76,7 @@ namespace RagnaRune.Player
             ReadMovementInput();
             HandleMouseClick();
             HandleSpellHotkeys();
+            HandleRangedHotkey();
         }
 
         private void ReadMovementInput()
@@ -94,41 +99,47 @@ namespace RagnaRune.Player
             if (!Input.GetMouseButtonDown(0)) return;
 
             Vector2 worldPos = _cam.ScreenToWorldPoint(Input.mousePosition);
-            var hit = Physics2D.OverlapPoint(worldPos, EnemyLayer);
 
+            // Priority: enemy → interactable → empty (move)
+            var hit = Physics2D.OverlapPoint(worldPos, EnemyLayer);
             if (hit != null && hit.TryGetComponent<Enemy.EnemyController>(out var enemy))
             {
                 _combat.SetTarget(enemy);
-                Debug.Log($"[Player] Targeting: {enemy.Data?.EnemyName}");
+                return;
             }
-            else
-            {
-                // Click on empty space → move toward it (optional click-to-move)
-                // Uncomment to enable: StartCoroutine(ClickToMove(worldPos));
-            }
+
+            // Interactables (shops, warps, gathering nodes) handled by their own triggers
         }
 
-        // ── Spell Hotkeys ─────────────────────────────────────────────────────
+        // ── Spells ────────────────────────────────────────────────────────────
 
         private void HandleSpellHotkeys()
         {
-            if (Input.GetKeyDown(FireSpellKey))   _combat.CastSpell(Core.Element.Fire,  15);
-            if (Input.GetKeyDown(WaterSpellKey))  _combat.CastSpell(Core.Element.Water, 15);
-            if (Input.GetKeyDown(HolySpellKey))   _combat.CastSpell(Core.Element.Holy,  20);
+            if (Input.GetKeyDown(FireSpellKey))  _combat.CastSpell(Element.Fire,  15);
+            if (Input.GetKeyDown(WaterSpellKey)) _combat.CastSpell(Element.Water, 15);
+            if (Input.GetKeyDown(HolySpellKey))  _combat.CastSpell(Element.Holy,  20);
+            if (Input.GetKeyDown(WindSpellKey))  _combat.CastSpell(Element.Wind,  15);
         }
 
-        // ── Event Handlers ────────────────────────────────────────────────────
+        // ── Ranged ────────────────────────────────────────────────────────────
+
+        private void HandleRangedHotkey()
+        {
+            if (Input.GetKeyDown(RangedAttackKey))
+                _combat.FireRangedAttack();
+        }
+
+        // ── Death / Respawn ───────────────────────────────────────────────────
 
         private void OnDied()
         {
             _isDead = true;
             _rb.linearVelocity = Vector2.zero;
-            Debug.Log("[Player] Died. Call Respawn() to continue.");
+            Debug.Log("[Player] Died.");
         }
 
         private void OnEnemyDefeated(Enemy.EnemyController enemy)
         {
-            // Roll for card drop and give to card system
             if (enemy.Data?.CardDrops == null) return;
             foreach (var drop in enemy.Data.CardDrops)
             {
@@ -143,7 +154,6 @@ namespace RagnaRune.Player
             _combat.Respawn();
         }
 
-        // ── Gizmo: show interact radius in editor ─────────────────────────────
 #if UNITY_EDITOR
         private void OnDrawGizmosSelected()
         {

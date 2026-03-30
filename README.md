@@ -1,6 +1,6 @@
-# RagnaRune — Unity Prototype
+# RagnaRune
 
-A hybrid Ragnarok Online × RuneScape combat prototype.
+> A hybrid Ragnarok Online × RuneScape RPG built in Unity 2D.
 
 ---
 
@@ -9,94 +9,88 @@ A hybrid Ragnarok Online × RuneScape combat prototype.
 | Tool | Version |
 |------|---------|
 | Unity | 2022.3 LTS or newer |
-| Render Pipeline | URP (Universal) or Built-in |
+| Render Pipeline | URP (Universal) or Built-in 2D |
 | TextMeshPro | via Package Manager |
-| AI Navigation | via Package Manager (for NavMesh) |
+| AI Navigation | via Package Manager (NavMesh) |
 
 ---
 
-## Quick Start (5 minutes)
+## Architecture
 
-### 1. Create a new Unity 2D project
-Use the **2D (URP)** template.
-
-### 2. Install packages
-Window → Package Manager → Install:
-- **TextMeshPro** (Essential Resources when prompted)
-- **AI Navigation** (com.unity.ai.navigation)
-
-### 3. Copy scripts
-Drop the `Assets/Scripts/` folder into your Unity project's `Assets/` folder.
-
-### 4. Create the Player prefab
-
-1. **GameObject → 2D Object → Sprite** → name it `Player`
-2. Add components:
-   - `Rigidbody2D` (Gravity Scale = 0, Freeze Z rotation)
-   - `CircleCollider2D` (radius 0.4)
-   - `RagnaRune.Combat.CombatManager`
-   - `RagnaRune.Cards.CardSystem`
-   - `RagnaRune.Skills.SkillSystem`
-   - `RagnaRune.Player.PlayerController`
-3. In **CombatManager** Inspector:
-   - Drag `CardSystem` and `SkillSystem` references
-   - Fill in `PlayerStats` STR/AGI/VIT/INT/DEX/LUK (or leave defaults)
-4. In **PlayerController** Inspector:
-   - Set `Enemy Layer` to your enemy layer (see step 6)
-   - Move speed: `4`
-5. Save as Prefab
-
-### 5. Create the Enemy prefab
-
-1. **GameObject → 2D Object → Sprite** → name it `Enemy`
-2. Add components:
-   - `NavMeshAgent` (set Steering → Base Offset = 0)
-   - `CircleCollider2D`
-   - `RagnaRune.Enemy.EnemyController`
-3. Assign an `EnemyData` ScriptableObject (see step 7)
-4. Set the GameObject's **Layer** to `Enemy`
-5. Save as Prefab
-
-### 6. Layers
-Edit → Project Settings → Tags and Layers:
-- Add layer `Enemy`
-- Set all enemy GameObjects to use it
-
-### 7. Create ScriptableObjects
-
-Right-click in the Project panel:
-- **Create → RagnaRune → EnemyData** → fill in stats
-- **Create → RagnaRune → Card** → fill in effect
-
-Two code-created presets are available:
-```csharp
-EnemyData.MakePoring()
-EnemyData.MakeSwordfish()
-CardData.MakePoring()
-CardData.MakeOrcLord()
+```
+GameManager (singleton)
+├── PlayerController        ← WASD input, click-to-target, hotkeys
+│   ├── CombatManager       ← Auto-attack loop, spells, ranged, death
+│   │   ├── CombatCalculator (static) ← RO math: melee, ranged, magic
+│   │   └── StatusEffectSystem  ← Timed debuffs: Poison, Stun, Freeze…
+│   ├── CardSystem          ← Inventory, socket slots, per-hit bonuses
+│   ├── SkillSystem         ← RS-style XP/level; 12 skills; save/load
+│   └── RegenSystem         ← Passive HP/SP regen; sit bonus
+│
+├── EnemyController (per enemy)
+│   ├── EnemyData (SO)      ← Stats, AI config, loot table
+│   └── StatusEffectSystem  ← Same system on enemies
+│
+└── World objects
+    ├── LootPickup          ← Ground items (Zeny, Cards, CraftingItems)
+    ├── WarpPortal          ← RO-style zone transitions
+    ├── ShopNPC             ← Zeny-based buy/sell merchant
+    ├── GatheringInteractable ← Mining/Fishing/etc. XP nodes
+    └── CraftingStation     ← Skill-gated crafting bench
 ```
 
-### 8. Bake a NavMesh
+---
 
-1. **Window → AI → Navigation** → open the panel
-2. Mark your ground/floor objects as **Navigation Static**
-3. Click **Bake**
+## Quick Start
 
-### 9. Create the GameManager
+### 1. Unity project
+New project → **2D (URP)** template → Unity 2022.3 LTS.
 
-1. **GameObject → Create Empty** → name `GameManager`
-2. Add `RagnaRune.Managers.GameManager`
-3. Assign:
-   - `PlayerPrefab` → your Player prefab
-   - `EnemyPrefab` → your Enemy prefab
-   - `SpawnEntries` → add rows: Data + SpawnPoint + Count
+### 2. Packages
+Window → Package Manager → install:
+- **TextMeshPro** (click "Import TMP Essentials" when prompted)
+- **AI Navigation** (`com.unity.ai.navigation`)
 
-### 10. Wire the HUD
+### 3. Scripts
+Drop `Assets/Scripts/` into your project.
 
-1. Create a UI Canvas (World Space canvas for damage numbers, Screen Space for vitals)
-2. Add `RagnaRune.UI.CombatHUD` to any GameObject
-3. Drag `CombatManager` and `SkillSystem` refs in
-4. Connect Sliders, TMP_Text fields as labelled in the Inspector
+### 4. Player prefab
+
+| Component | Settings |
+|-----------|----------|
+| `Rigidbody2D` | Gravity Scale = 0, Freeze Z rotation |
+| `CircleCollider2D` | radius 0.4, tag the GO as `Player` |
+| `CombatManager` | drag CardSystem + SkillSystem refs |
+| `CardSystem` | (auto-seeds 4 starter cards in Editor) |
+| `SkillSystem` | — |
+| `StatusEffectSystem` | — |
+| `RegenSystem` | — |
+| `PlayerController` | set Enemy Layer mask, move speed 4 |
+
+### 5. Enemy prefab
+
+| Component | Notes |
+|-----------|-------|
+| `NavMeshAgent` | Base Offset = 0, Stopping Distance = 1 |
+| `CircleCollider2D` | Layer = `Enemy` |
+| `EnemyController` | assign EnemyData SO |
+| `StatusEffectSystem` | — |
+
+### 6. Bake NavMesh
+Window → AI → Navigation → mark ground tiles as **Navigation Static** → **Bake**.
+
+### 7. GameManager
+Empty GameObject → `GameManager` → assign Player/Enemy prefabs and SpawnEntries.
+
+### 8. World objects
+
+**Warp portal** — add `WarpPortal` + Collider2D (trigger) to any GO. Set `ActivateOnEnter = true` and assign a `Destination` transform (same scene) or `DestinationScene` (cross-scene).
+
+**Shop NPC** — add `ShopNPC` + Collider2D (trigger). Fill `Stock` in the Inspector. Subscribe to `OnShopOpened` from your UI to render the shop panel.
+
+**Loot drops** — create a prefab with `LootPickup` + `SpriteRenderer` + Collider2D (trigger). Drag it into `EnemyData.LootDropPrefab` (or call `LootPickup.SpawnZeny/SpawnCard` from code).
+
+**Gathering nodes** — add `GatheringInteractable` + Collider2D (trigger). Set `Skill`, `XpReward`, and `RequiredLevel`.
 
 ---
 
@@ -104,46 +98,85 @@ CardData.MakeOrcLord()
 
 | Input | Action |
 |-------|--------|
-| WASD / Arrow keys | Move |
-| Left-click on enemy | Target and start auto-attacking |
-| `1` | Cast Fire spell on target (15 SP) |
-| `2` | Cast Water spell on target (15 SP) |
-| `3` | Cast Holy spell on target (20 SP) |
+| WASD / arrows | Move |
+| Left-click enemy | Target → begin auto-attacking |
+| `1` | Fire spell (15 SP) |
+| `2` | Water spell (15 SP) |
+| `3` | Holy spell (20 SP) |
+| `4` | Wind spell (15 SP) |
+| `R` | Ranged shot (5 SP) |
+| `E` | Interact / pick up loot / use gathering node / craft |
+| `F` | Talk to NPC / enter warp (when not auto-activating) |
 
 ---
 
-## Architecture Overview
+## Status Effects
 
-```
-GameManager          ← Singleton: spawns player + enemies, manages Zeny
-├─ PlayerController  ← Input, movement, click-to-target
-│  ├─ CombatManager  ← Auto-attack loop, spell casting, death handling
-│  │  └─ CombatCalculator (static) ← RO damage math, element chart
-│  ├─ CardSystem     ← Card inventory, socket slots, stat bonuses
-│  └─ SkillSystem    ← RS-style XP/level tracking, stat feedback
-└─ EnemyController   ← AI state machine (Idle/Wander/Chase/Attack/Dead)
-   └─ EnemyData (SO) ← Stats, AI config, loot table
-```
+| Effect | Behaviour |
+|--------|-----------|
+| Poison | 1% max HP per tick; cannot kill |
+| Stun | Cannot act |
+| Freeze | Cannot act; +extra damage from Fire/Wind |
+| Sleep | Cannot act; next hit ×2 damage + wakes |
+| Silence | Cannot cast spells |
+| Blind | HIT −50% |
+| Slow | ASPD −50%, FLEE −50% |
+| Curse | STR/DEX/AGI ÷2, LUK = 0 |
+| Bleeding | Flat HP loss per tick |
+| Bless (buff) | STR/INT/DEX +10 |
+| Agi (buff) | AGI/FLEE +20, ASPD +0.3 |
 
----
-
-## Element Chart (simplified)
-
-```
-Fire    → Water   : ×0.5   Fire    → Earth  : ×1.75
-Water   → Fire    : ×1.75  Wind    → Water  : ×1.75
-Holy    → Undead  : ×2.0   Shadow  → Holy   : ×1.75
-Ghost   → Ghost   : ×1.75  Neutral → Ghost  : ×0.5
-```
-Full 10×10 matrix lives in `Element.cs → ElementChart.GetMultiplier()`.
+Apply via `StatusEffectSystem.ApplyPoison()`, `.ApplyStun()`, etc.
+Resist % can be added via `CardEffect.ResistStatus` cards.
 
 ---
 
-## Next Steps
+## Element Chart (excerpt)
 
-1. **Sprites & Animations** — drop RO-style sprite sheets and wire up `Animator`
-2. **Map** — import a Tiled map or build one with Unity Tilemaps
-3. **Item system** — extend `CardData` or add `ItemData` SO for weapons/armor
-4. **More skills** — add Mining/Fishing interactions that award XP to gathering skills
-5. **Shop NPC** — spend Zeny on stat resets or card slots
-6. **Save/Load** — serialize `SkillSystem` and `CardSystem` with `JsonUtility`
+| Attacker → Defender | Fire | Water | Wind | Earth | Holy | Undead |
+|---------------------|------|-------|------|-------|------|--------|
+| Fire | ×0.25 | ×0.5 | — | ×1.75 | — | ×1.25 |
+| Water | ×1.75 | ×0.25 | ×0.5 | — | — | ×0.75 |
+| Holy | — | — | — | — | — | ×2.0 |
+| Ghost | ×0.25 | — | — | — | — | ×0.75 |
+
+Full 10×10 matrix in `Element.cs → ElementChart`.
+
+---
+
+## CI / CD
+
+`.github/workflows/unity-ci.yml` runs on every push/PR:
+1. **Edit-mode tests** and **play-mode tests** (parallel)
+2. **Builds** for Linux64, Windows64, WebGL (main branch only, after tests pass)
+3. **WebGL deploy** to GitHub Pages (main branch only)
+
+### Secrets required
+Add these in **Settings → Secrets → Actions**:
+
+| Secret | Where to get it |
+|--------|----------------|
+| `UNITY_LICENSE` | Run `game-ci/unity-activate` locally or use a Personal license XML |
+| `UNITY_EMAIL` | Your Unity account email |
+| `UNITY_PASSWORD` | Your Unity account password |
+
+See [game.ci/docs](https://game.ci/docs/github/getting-started) for the full license setup guide.
+
+---
+
+## Roadmap
+
+- [ ] Sprite sheets & Animator controllers (RO-style 8-dir sprites)
+- [ ] Tilemap world + Tiled importer
+- [ ] Party system (share XP, revive)
+- [ ] Boss enemies with multi-phase AI
+- [ ] Card album UI (collection tracker)
+- [ ] Auction House / player-to-player trade
+- [ ] Mobile virtual joystick input layer
+- [ ] Sound & music (SFX on hit, level-up jingle)
+
+---
+
+## License
+
+MIT — see `LICENSE`.
