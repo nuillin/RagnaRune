@@ -1,6 +1,6 @@
-# RagnaRune
+# RagnaRune — Godot 4
 
-> A hybrid Ragnarok Online × RuneScape RPG built in Unity 2D.
+> Ragnarok Online × RuneScape hybrid RPG. Converted from Unity C# to Godot 4 GDScript.
 
 ---
 
@@ -8,89 +8,139 @@
 
 | Tool | Version |
 |------|---------|
-| Unity | 2022.3 LTS or newer |
-| Render Pipeline | URP (Universal) or Built-in 2D |
-| TextMeshPro | via Package Manager |
-| AI Navigation | via Package Manager (NavMesh) |
+| Godot | 4.3 stable or newer |
+| GUT (tests, optional) | github.com/bitwes/Gut |
+
+No .NET SDK needed — pure GDScript.
 
 ---
 
-## Architecture
+## Project structure
 
 ```
-GameManager (singleton)
-├── PlayerController        ← WASD input, click-to-target, hotkeys
-│   ├── CombatManager       ← Auto-attack loop, spells, ranged, death
-│   │   ├── CombatCalculator (static) ← RO math: melee, ranged, magic
-│   │   └── StatusEffectSystem  ← Timed debuffs: Poison, Stun, Freeze…
-│   ├── CardSystem          ← Inventory, socket slots, per-hit bonuses
-│   ├── SkillSystem         ← RS-style XP/level; 12 skills; save/load
-│   └── RegenSystem         ← Passive HP/SP regen; sit bonus
-│
-├── EnemyController (per enemy)
-│   ├── EnemyData (SO)      ← Stats, AI config, loot table
-│   └── StatusEffectSystem  ← Same system on enemies
-│
-└── World objects
-    ├── LootPickup          ← Ground items (Zeny, Cards, CraftingItems)
-    ├── WarpPortal          ← RO-style zone transitions
-    ├── ShopNPC             ← Zeny-based buy/sell merchant
-    ├── GatheringInteractable ← Mining/Fishing/etc. XP nodes
-    └── CraftingStation     ← Skill-gated crafting bench
+RagnaRune_Godot/
+├─ project.godot               ← Input map, physics layers, autoloads
+├─ scripts/
+│   ├─ core/
+│   │   ├─ element.gd          ← Element enum + full 10×10 damage chart
+│   │   ├─ character_stats.gd  ← Shared stat Resource (replaces ScriptableObject)
+│   │   └─ damage_result.gd    ← Value object returned by CombatCalculator
+│   ├─ combat/
+│   │   ├─ combat_calculator.gd   ← Pure-static RO math (melee/ranged/magic/XP)
+│   │   ├─ combat_manager.gd      ← Auto-attack loop, spells, ranged; child Node
+│   │   ├─ status_effect_system.gd← Timed debuffs/buffs with tick damage
+│   │   └─ regen_system.gd        ← Passive HP/SP regen + sit bonus
+│   ├─ cards/
+│   │   ├─ card_data.gd           ← Card Resource with all effects + presets
+│   │   └─ card_system.gd         ← Inventory, socket slots, stat bonuses
+│   ├─ skills/
+│   │   ├─ experience_curve.gd    ← Exact RS XP formula
+│   │   ├─ skill_system.gd        ← 12 skills, award_xp, level_up signal
+│   │   └─ skill_persistence.gd   ← JSON save/load to user://
+│   ├─ crafting/
+│   │   ├─ crafting_item.gd
+│   │   ├─ crafting_recipe.gd
+│   │   ├─ crafting_catalog.gd    ← Maps save IDs back to Resources at load time
+│   │   ├─ crafting_service.gd    ← Pure-static craft logic
+│   │   └─ item_inventory.gd      ← Stack-based inventory Node
+│   ├─ enemy/
+│   │   ├─ enemy_data.gd          ← Enemy Resource + presets (Poring, Swordfish)
+│   │   └─ enemy_controller.gd    ← CharacterBody2D + NavigationAgent2D AI
+│   ├─ player/
+│   │   └─ player_controller.gd   ← CharacterBody2D, WASD, click-to-target
+│   ├─ world/
+│   │   ├─ loot_pickup.gd         ← Ground item (Area2D), vacuum + E-key
+│   │   ├─ warp_portal.gd         ← RO-style zone transitions + SceneSpawnController
+│   │   ├─ shop_npc.gd            ← Walk-up Zeny merchant
+│   │   ├─ gathering_interactable.gd
+│   │   └─ crafting_station.gd
+│   ├─ managers/
+│   │   └─ game_manager.gd        ← Autoload singleton
+│   └─ ui/
+│       ├─ combat_hud.gd          ← HP/SP bars, damage numbers, target panel
+│       ├─ skill_row_view.gd      ← Single row with flash animation
+│       └─ skills_hud.gd          ← Full RS-style skills panel
+└─ .github/workflows/godot-ci.yml ← Test + export + Pages deploy
 ```
 
 ---
 
-## Quick Start
+## Unity → Godot conversion table
 
-### 1. Unity project
-New project → **2D (URP)** template → Unity 2022.3 LTS.
+| Unity | Godot 4 |
+|-------|---------|
+| `MonoBehaviour` | `Node` / `Node2D` / `CharacterBody2D` |
+| `ScriptableObject` | `Resource` |
+| `[SerializeField]` / `[Export]` | `@export` |
+| `Rigidbody2D` | `CharacterBody2D` + `move_and_slide()` |
+| `NavMeshAgent` | `NavigationAgent2D` |
+| `Physics2D.OverlapPoint` | `PhysicsDirectSpaceState2D.intersect_point()` |
+| `event Action<T>` | `signal name(arg: Type)` |
+| `StartCoroutine` | `await get_tree().create_timer(n).timeout` or `Tween` |
+| `Update()` | `_process(delta)` |
+| `FixedUpdate()` | `_physics_process(delta)` |
+| `GetComponent<T>()` | `get_node("NodeName")` or `$NodeName` |
+| `Instantiate(prefab)` | `scene.instantiate()` + `add_child()` |
+| `Destroy(go)` | `node.queue_free()` |
+| `SceneManager.LoadScene` | `get_tree().change_scene_to_file("res://...")` |
+| `JsonUtility` | `JSON.stringify()` / `JSON.parse_string()` |
+| `Application.persistentDataPath` | `user://` |
+| `Debug.Log` | `print()` |
+| `[RequireComponent]` | `@onready var x = $ChildName` (enforced by scene tree) |
 
-### 2. Packages
-Window → Package Manager → install:
-- **TextMeshPro** (click "Import TMP Essentials" when prompted)
-- **AI Navigation** (`com.unity.ai.navigation`)
+---
 
-### 3. Scripts
-Drop `Assets/Scripts/` into your project.
+## Quick start
 
-### 4. Player prefab
+### 1. Open the project
+File → Open → select `RagnaRune_Godot/` folder. Godot will import all scripts.
 
-| Component | Settings |
-|-----------|----------|
-| `Rigidbody2D` | Gravity Scale = 0, Freeze Z rotation |
-| `CircleCollider2D` | radius 0.4, tag the GO as `Player` |
-| `CombatManager` | drag CardSystem + SkillSystem refs |
-| `CardSystem` | (auto-seeds 4 starter cards in Editor) |
-| `SkillSystem` | — |
-| `StatusEffectSystem` | — |
-| `RegenSystem` | — |
-| `PlayerController` | set Enemy Layer mask, move speed 4 |
+### 2. Physics layers
+Layers are pre-configured in `project.godot`:
 
-### 5. Enemy prefab
+| Layer | Name |
+|-------|------|
+| 1 | world |
+| 2 | player |
+| 3 | enemy |
+| 4 | interactable |
+| 5 | loot |
 
-| Component | Notes |
-|-----------|-------|
-| `NavMeshAgent` | Base Offset = 0, Stopping Distance = 1 |
-| `CircleCollider2D` | Layer = `Enemy` |
-| `EnemyController` | assign EnemyData SO |
-| `StatusEffectSystem` | — |
+### 3. Create the Player scene
+1. New Scene → `CharacterBody2D` root → rename `PlayerController`
+2. Add child nodes: `CollisionShape2D`, `AnimatedSprite2D`
+3. Add script: `scripts/player/player_controller.gd`
+4. Add sibling Node children (no scripts needed on the nodes themselves — scripts go as root):
+   - `CombatManager` (Node, script: `combat_manager.gd`)
+   - `CardSystem` (Node, script: `card_system.gd`)
+   - `SkillSystem` (Node, script: `skill_system.gd`)
+   - `StatusEffectSystem` (Node, script: `status_effect_system.gd`)
+   - `RegenSystem` (Node, script: `regen_system.gd`)
+   - `ItemInventory` (Node, script: `item_inventory.gd`)
+5. Set Physics Layer to **2 (player)**; add tag **"player"** via Groups
 
-### 6. Bake NavMesh
-Window → AI → Navigation → mark ground tiles as **Navigation Static** → **Bake**.
+### 4. Create the Enemy scene
+1. New Scene → `CharacterBody2D` → rename `EnemyController`
+2. Add: `NavigationAgent2D`, `CollisionShape2D`, `AnimatedSprite2D`, `StatusEffectSystem`
+3. Attach `scripts/enemy/enemy_controller.gd`
+4. Set Physics Layer to **3 (enemy)**
 
-### 7. GameManager
-Empty GameObject → `GameManager` → assign Player/Enemy prefabs and SpawnEntries.
+### 5. Create the Loot scene
+1. New Scene → `Area2D` → rename `LootPickup`
+2. Add: `CollisionShape2D`, `Sprite2D`
+3. Attach `scripts/world/loot_pickup.gd`
 
-### 8. World objects
+### 6. Wire the GameManager autoload
+It is already registered in `project.godot`. In the Inspector set:
+- `Player Scene` → your player `.tscn`
+- `Enemy Scene` → your enemy `.tscn`
+- `Loot Scene` → your loot `.tscn`
 
-**Warp portal** — add `WarpPortal` + Collider2D (trigger) to any GO. Set `ActivateOnEnter = true` and assign a `Destination` transform (same scene) or `DestinationScene` (cross-scene).
-
-**Shop NPC** — add `ShopNPC` + Collider2D (trigger). Fill `Stock` in the Inspector. Subscribe to `OnShopOpened` from your UI to render the shop panel.
-
-**Loot drops** — create a prefab with `LootPickup` + `SpriteRenderer` + Collider2D (trigger). Drag it into `EnemyData.LootDropPrefab` (or call `LootPickup.SpawnZeny/SpawnCard` from code).
-
-**Gathering nodes** — add `GatheringInteractable` + Collider2D (trigger). Set `Skill`, `XpReward`, and `RequiredLevel`.
+### 7. Create a game scene
+1. New Scene → `Node2D` → name `Game`
+2. Add a `TileMapLayer` (ground), bake a `NavigationRegion2D`
+3. Add a `SpawnManager` node or call `GameManager.spawn_player()` from a `_ready()` script
+4. Add a `CanvasLayer` → attach `CombatHUD` + `SkillsHUD`
 
 ---
 
@@ -99,84 +149,60 @@ Empty GameObject → `GameManager` → assign Player/Enemy prefabs and SpawnEntr
 | Input | Action |
 |-------|--------|
 | WASD / arrows | Move |
-| Left-click enemy | Target → begin auto-attacking |
+| Left-click enemy | Target → auto-attack |
 | `1` | Fire spell (15 SP) |
 | `2` | Water spell (15 SP) |
 | `3` | Holy spell (20 SP) |
 | `4` | Wind spell (15 SP) |
 | `R` | Ranged shot (5 SP) |
-| `E` | Interact / pick up loot / use gathering node / craft |
-| `F` | Talk to NPC / enter warp (when not auto-activating) |
+| `E` | Interact / pick up / gather / craft |
+| `F` | Talk to NPC / enter warp |
 
 ---
 
-## Status Effects
+## Status effects
 
 | Effect | Behaviour |
 |--------|-----------|
-| Poison | 1% max HP per tick; cannot kill |
-| Stun | Cannot act |
-| Freeze | Cannot act; +extra damage from Fire/Wind |
-| Sleep | Cannot act; next hit ×2 damage + wakes |
-| Silence | Cannot cast spells |
-| Blind | HIT −50% |
-| Slow | ASPD −50%, FLEE −50% |
-| Curse | STR/DEX/AGI ÷2, LUK = 0 |
-| Bleeding | Flat HP loss per tick |
-| Bless (buff) | STR/INT/DEX +10 |
-| Agi (buff) | AGI/FLEE +20, ASPD +0.3 |
+| POISON | 1% max HP per second tick; cannot kill |
+| STUN | Cannot act |
+| FREEZE | Cannot act; extra damage from Fire/Wind |
+| SLEEP | Cannot act; next hit ×2 + wakes |
+| SILENCE | Cannot cast spells |
+| BLIND | HIT −50% |
+| SLOW | ASPD −50%, FLEE −50% |
+| CURSE | STR/DEX/AGI ÷2, LUK = 0 |
+| BLEEDING | Flat HP tick every 2 s |
+| BLESS (buff) | STR/INT/DEX +10 |
+| AGI_UP (buff) | FLEE +20, ASPD +0.3 |
 
-Apply via `StatusEffectSystem.ApplyPoison()`, `.ApplyStun()`, etc.
-Resist % can be added via `CardEffect.ResistStatus` cards.
-
----
-
-## Element Chart (excerpt)
-
-| Attacker → Defender | Fire | Water | Wind | Earth | Holy | Undead |
-|---------------------|------|-------|------|-------|------|--------|
-| Fire | ×0.25 | ×0.5 | — | ×1.75 | — | ×1.25 |
-| Water | ×1.75 | ×0.25 | ×0.5 | — | — | ×0.75 |
-| Holy | — | — | — | — | — | ×2.0 |
-| Ghost | ×0.25 | — | — | — | — | ×0.75 |
-
-Full 10×10 matrix in `Element.cs → ElementChart`.
+Apply via `status_effects.apply_poison()`, `.apply_stun()`, etc.
 
 ---
 
 ## CI / CD
 
-`.github/workflows/unity-ci.yml` runs on every push/PR:
-1. **Edit-mode tests** and **play-mode tests** (parallel)
-2. **Builds** for Linux64, Windows64, WebGL (main branch only, after tests pass)
-3. **WebGL deploy** to GitHub Pages (main branch only)
+`.github/workflows/godot-ci.yml` uses `barichello/godot-ci:4.3` Docker image:
+1. **GUT tests** on every push/PR
+2. **Export** Linux64, Windows64, Web (main branch only, after tests pass)
+3. **Deploy Web** to GitHub Pages automatically
 
-### Secrets required
-Add these in **Settings → Secrets → Actions**:
-
-| Secret | Where to get it |
-|--------|----------------|
-| `UNITY_LICENSE` | Run `game-ci/unity-activate` locally or use a Personal license XML |
-| `UNITY_EMAIL` | Your Unity account email |
-| `UNITY_PASSWORD` | Your Unity account password |
-
-See [game.ci/docs](https://game.ci/docs/github/getting-started) for the full license setup guide.
+No secrets needed beyond the default `GITHUB_TOKEN` (provided by Actions automatically).
 
 ---
 
 ## Roadmap
 
-- [ ] Sprite sheets & Animator controllers (RO-style 8-dir sprites)
-- [ ] Tilemap world + Tiled importer
-- [ ] Party system (share XP, revive)
-- [ ] Boss enemies with multi-phase AI
-- [ ] Card album UI (collection tracker)
-- [ ] Auction House / player-to-player trade
-- [ ] Mobile virtual joystick input layer
-- [ ] Sound & music (SFX on hit, level-up jingle)
+- [ ] AnimatedSprite2D sheets (RO 8-dir walking)
+- [ ] TileMapLayer world with NavigationRegion2D
+- [ ] Card album UI
+- [ ] Party system with shared XP
+- [ ] Boss enemies with multi-phase behaviour trees
+- [ ] Auction House / player trade
+- [ ] Mobile virtual joystick (built-in Godot touch input)
+- [ ] Sound: SFX bus + Music bus with RO-inspired tracks
 
 ---
 
 ## License
-
 MIT — see `LICENSE`.

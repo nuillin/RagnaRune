@@ -1,0 +1,147 @@
+name: Godot CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: "4.3"
+  EXPORT_NAME:   "RagnaRune"
+  PROJECT_PATH:  "."
+
+jobs:
+  # ── 1. Import + unit tests ────────────────────────────────────────────────────
+  test:
+    name: GUT tests
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.3
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Cache Godot import cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PROJECT_PATH }}/.godot
+          key: godot-import-${{ hashFiles('**/*.gd', '**/*.tscn', '**/*.tres') }}
+          restore-keys: godot-import-
+
+      - name: Import project assets
+        run: |
+          godot --headless --import 2>&1 | tail -5 || true
+
+      - name: Install GUT (Godot Unit Testing)
+        run: |
+          mkdir -p addons
+          git clone --depth 1 https://github.com/bitwes/Gut.git addons/gut
+
+      - name: Run GUT tests
+        run: |
+          godot --headless -s addons/gut/gut_cmdln.gd \
+            -gdir=res://tests/ -ginclude_subdirs -gexit 2>&1
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            res://.gut_results.xml
+            res://.gut_results/
+          retention-days: 14
+
+  # ── 2. Export builds (push to main only, after tests) ─────────────────────────
+  export:
+    name: Export (${{ matrix.platform }})
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.3
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux/X11
+            preset:   "Linux/X11"
+            out_dir:  builds/linux
+            out_file: RagnaRune.x86_64
+
+          - platform: Windows Desktop
+            preset:   "Windows Desktop"
+            out_dir:  builds/windows
+            out_file: RagnaRune.exe
+
+          - platform: Web
+            preset:   "Web"
+            out_dir:  builds/web
+            out_file: RagnaRune.html
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Cache Godot import cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PROJECT_PATH }}/.godot
+          key: godot-import-${{ hashFiles('**/*.gd', '**/*.tscn', '**/*.tres') }}
+          restore-keys: godot-import-
+
+      - name: Setup export templates
+        run: |
+          mkdir -p ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable
+          # Templates are bundled in the barichello/godot-ci image
+          cp /root/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable/* \
+             ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable/ 2>/dev/null || true
+
+      - name: Create output directory
+        run: mkdir -p ${{ matrix.out_dir }}
+
+      - name: Export ${{ matrix.platform }}
+        run: |
+          godot --headless --export-release "${{ matrix.preset }}" \
+            "${{ matrix.out_dir }}/${{ matrix.out_file }}" 2>&1
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build-${{ matrix.platform }}
+          path: ${{ matrix.out_dir }}
+          retention-days: 7
+
+  # ── 3. Deploy Web build to GitHub Pages ────────────────────────────────────────
+  deploy-web:
+    name: Deploy Web → GitHub Pages
+    needs: export
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Web build
+        uses: actions/download-artifact@v4
+        with:
+          name: Build-Web
+          path: web-build
+
+      - name: Add .nojekyll (required for Godot HTML5 exports)
+        run: touch web-build/.nojekyll
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir:  web-build
+          publish_branch: gh-pages
