@@ -138,6 +138,10 @@ jobs:
 
       - name: Export ${{ matrix.platform }}
         run: |
+          if [ ! -f export_presets.cfg ]; then
+            echo "No export_presets.cfg found — skipping export for ${{ matrix.platform }}."
+            exit 0
+          fi
           godot --headless \
             --export-release "${{ matrix.preset }}" \
             "${{ matrix.out_dir }}/${{ matrix.out_file }}" \
