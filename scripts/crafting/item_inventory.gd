@@ -60,7 +60,7 @@ func try_remove(item: CraftingItem, count: int) -> bool:
 func try_consume(ingredients: Array) -> bool:
 	if not has_ingredients(ingredients): return false
 	for ing in ingredients:
-		var need := ing.count
+		var need: int = int(ing.count)
 		for s in _stacks:
 			if s.item != ing.item: continue
 			var take := mini(s.count, need)

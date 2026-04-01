@@ -9,7 +9,7 @@ extends Resource
 @export var required_level: int = 1
 
 @export_group("Ingredients / Output")
-@export var ingredients: Array[RecipeIngredient] = []
+@export var ingredients: Array = []
 @export var result_item: CraftingItem
 @export var result_count: int = 1
 

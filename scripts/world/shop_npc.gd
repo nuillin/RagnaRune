@@ -31,7 +31,7 @@ class ShopEntry:
 
 @export var shop_name: String    = "Tool Dealer"
 @export var npc_dialog: String   = "Welcome! Take a look at my wares."
-@export var stock: Array[ShopEntry] = []
+@export var stock: Array = []
 
 var _player: PlayerController = null
 var _is_open: bool = false

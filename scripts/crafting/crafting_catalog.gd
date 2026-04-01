@@ -4,7 +4,7 @@
 class_name CraftingCatalog
 extends Resource
 
-@export var items: Array[CraftingItem] = []
+@export var items: Array = []
 
 var _by_key: Dictionary = {}
 var _built: bool = false

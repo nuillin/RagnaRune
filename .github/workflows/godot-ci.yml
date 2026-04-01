@@ -55,7 +55,9 @@ jobs:
         run: godot --headless --import 2>&1 | tail -20 || true
 
       - name: Run GUT tests
+        shell: bash -l {0}
         run: |
+          set -o pipefail
           godot --headless \
             -s addons/gut/gut_cmdln.gd \
             -gdir=res://tests/ \
@@ -65,7 +67,7 @@ jobs:
             -gexit \
             2>&1 | tee gut_output.txt
 
-          EXIT=${PIPESTATUS[0]}
+          EXIT=$?
           # GUT exit 1 = test failures (still useful). Anything higher = crash.
           if grep -q "ERROR:" gut_output.txt && [ "$EXIT" -gt 1 ]; then
             echo "::error::Godot crashed or GUT could not load."

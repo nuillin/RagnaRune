@@ -20,8 +20,8 @@ extends Resource
 @export_group("Loot")
 @export var base_zeny_drop: int = 5
 @export var max_zeny_drop: int  = 20
-@export var card_drops: Array[CardDropEntry] = []
-@export var item_drops: Array[ItemDropEntry] = []
+@export var card_drops: Array = []
+@export var item_drops: Array = []
 
 @export_group("Respawn")
 @export var respawn_delay: float = 10.0

@@ -75,7 +75,7 @@ func _do_warp() -> void:
 class_name SceneSpawnController
 extends Node
 
-@export var spawn_points: Array[SpawnPointEntry] = []
+@export var spawn_points: Array = []
 
 func _ready() -> void:
 	if GameManager.pending_spawn_id.is_empty(): return
