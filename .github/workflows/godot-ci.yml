@@ -14,6 +14,7 @@ env:
   GODOT_VERSION: "4.3"
   EXPORT_NAME:   "RagnaRune"
   PROJECT_PATH:  "."
+  GUT_VERSION:   "v9.3.0"
 
 jobs:
   # ── 1. Import + unit tests ────────────────────────────────────────────────────
@@ -28,38 +29,62 @@ jobs:
         with:
           lfs: true
 
+      # Install GUT BEFORE the import step so Godot sees it as a known addon.
+      - name: Install GUT addon
+        run: |
+          mkdir -p addons
+          curl -L \
+            "https://github.com/bitwes/Gut/releases/download/${GUT_VERSION}/gut_${GUT_VERSION}.zip" \
+            -o gut.zip
+          unzip -q gut.zip -d addons/
+          rm gut.zip
+          ls addons/gut/gut_cmdln.gd   # fail fast if zip layout changed
+
+      # An empty tests/ dir is fine — GUT exits 0 when no test files are found.
+      - name: Ensure tests directory exists
+        run: mkdir -p tests
+
       - name: Cache Godot import cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.PROJECT_PATH }}/.godot
-          key: godot-import-${{ hashFiles('**/*.gd', '**/*.tscn', '**/*.tres') }}
-          restore-keys: godot-import-
+          path: .godot
+          key: godot-import-${{ env.GUT_VERSION }}-${{ hashFiles('**/*.gd','**/*.tscn','**/*.tres') }}
+          restore-keys: |
+            godot-import-${{ env.GUT_VERSION }}-
+            godot-import-
 
+      # Must import at least once so res:// paths resolve correctly.
       - name: Import project assets
-        run: |
-          godot --headless --import 2>&1 | tail -5 || true
-
-      - name: Install GUT (Godot Unit Testing)
-        run: |
-          mkdir -p addons
-          git clone --depth 1 https://github.com/bitwes/Gut.git addons/gut
+        run: godot --headless --import 2>&1 | tail -20 || true
 
       - name: Run GUT tests
         run: |
-          godot --headless -s addons/gut/gut_cmdln.gd \
-            -gdir=res://tests/ -ginclude_subdirs -gexit 2>&1
+          godot --headless \
+            -s addons/gut/gut_cmdln.gd \
+            -gdir=res://tests/ \
+            -ginclude_subdirs \
+            -gprefix=test_ \
+            -gsuffix=.gd \
+            -gexit \
+            2>&1 | tee gut_output.txt
+
+          EXIT=${PIPESTATUS[0]}
+          # GUT exit 1 = test failures (still useful). Anything higher = crash.
+          if grep -q "ERROR:" gut_output.txt && [ "$EXIT" -gt 1 ]; then
+            echo "::error::Godot crashed or GUT could not load."
+            exit "$EXIT"
+          fi
+          exit "$EXIT"
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results
-          path: |
-            res://.gut_results.xml
-            res://.gut_results/
+          path: gut_output.txt
           retention-days: 14
 
-  # ── 2. Export builds (push to main only, after tests) ─────────────────────────
+  # ── 2. Export builds (main-branch pushes only, after tests pass) ───────────────
   export:
     name: Export (${{ matrix.platform }})
     needs: test
@@ -71,12 +96,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: Linux/X11
+          - platform: Linux
             preset:   "Linux/X11"
             out_dir:  builds/linux
             out_file: RagnaRune.x86_64
 
-          - platform: Windows Desktop
+          - platform: Windows
             preset:   "Windows Desktop"
             out_dir:  builds/windows
             out_file: RagnaRune.exe
@@ -91,27 +116,36 @@ jobs:
         with:
           lfs: true
 
+      - name: Install GUT addon
+        run: |
+          mkdir -p addons
+          curl -L \
+            "https://github.com/bitwes/Gut/releases/download/${GUT_VERSION}/gut_${GUT_VERSION}.zip" \
+            -o gut.zip
+          unzip -q gut.zip -d addons/
+          rm gut.zip
+
       - name: Cache Godot import cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.PROJECT_PATH }}/.godot
-          key: godot-import-${{ hashFiles('**/*.gd', '**/*.tscn', '**/*.tres') }}
-          restore-keys: godot-import-
+          path: .godot
+          key: godot-import-${{ env.GUT_VERSION }}-${{ hashFiles('**/*.gd','**/*.tscn','**/*.tres') }}
+          restore-keys: |
+            godot-import-${{ env.GUT_VERSION }}-
+            godot-import-
 
-      - name: Setup export templates
-        run: |
-          mkdir -p ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable
-          # Templates are bundled in the barichello/godot-ci image
-          cp /root/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable/* \
-             ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable/ 2>/dev/null || true
+      - name: Import project assets
+        run: godot --headless --import 2>&1 | tail -20 || true
 
       - name: Create output directory
         run: mkdir -p ${{ matrix.out_dir }}
 
       - name: Export ${{ matrix.platform }}
         run: |
-          godot --headless --export-release "${{ matrix.preset }}" \
-            "${{ matrix.out_dir }}/${{ matrix.out_file }}" 2>&1
+          godot --headless \
+            --export-release "${{ matrix.preset }}" \
+            "${{ matrix.out_dir }}/${{ matrix.out_file }}" \
+            2>&1
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -120,7 +154,7 @@ jobs:
           path: ${{ matrix.out_dir }}
           retention-days: 7
 
-  # ── 3. Deploy Web build to GitHub Pages ────────────────────────────────────────
+  # ── 3. Deploy Web → GitHub Pages ───────────────────────────────────────────────
   deploy-web:
     name: Deploy Web → GitHub Pages
     needs: export
@@ -136,7 +170,28 @@ jobs:
           name: Build-Web
           path: web-build
 
-      - name: Add .nojekyll (required for Godot HTML5 exports)
+      # Godot Web exports need SharedArrayBuffer, which requires COOP/COEP headers.
+      # GitHub Pages can't set custom headers, so we inject a service-worker shim.
+      - name: Inject COOP/COEP service-worker shim
+        run: |
+          cat > web-build/coi-serviceworker.js << 'EOF'
+          self.addEventListener("install",()=>self.skipWaiting());
+          self.addEventListener("activate",e=>e.waitUntil(self.clients.claim()));
+          self.addEventListener("fetch",e=>{
+            if(e.request.cache==="only-if-cached"&&e.request.mode!=="same-origin")return;
+            e.respondWith(fetch(e.request,{cache:"no-store"}).then(r=>{
+              if(r.status===0)return r;
+              const h=new Headers(r.headers);
+              h.set("Cross-Origin-Opener-Policy","same-origin");
+              h.set("Cross-Origin-Embedder-Policy","require-corp");
+              return new Response(r.body,{status:r.status,statusText:r.statusText,headers:h});
+            }));
+          });
+          EOF
+          sed -i 's|</head>|<script>if(!self.crossOriginIsolated){const s=document.createElement("script");s.src="coi-serviceworker.js";document.head.appendChild(s);}</script></head>|' \
+            web-build/RagnaRune.html || true
+
+      - name: Add .nojekyll
         run: touch web-build/.nojekyll
 
       - name: Deploy to gh-pages
