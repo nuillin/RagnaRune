@@ -33,9 +33,7 @@ jobs:
       - name: Install GUT addon
         run: |
           mkdir -p addons
-          wget -q "https://github.com/bitwes/Gut/releases/download/${GUT_VERSION}/gut_${GUT_VERSION}.zip" -O gut.zip
-          unzip -q gut.zip -d addons/
-          rm gut.zip
+          git clone --quiet --depth 1 --branch ${GUT_VERSION} https://github.com/bitwes/Gut.git addons/gut
           ls addons/gut/gut_cmdln.gd   # fail fast if zip layout changed
 
       # An empty tests/ dir is fine — GUT exits 0 when no test files are found.
@@ -117,9 +115,7 @@ jobs:
       - name: Install GUT addon
         run: |
           mkdir -p addons
-          wget -q "https://github.com/bitwes/Gut/releases/download/${GUT_VERSION}/gut_${GUT_VERSION}.zip" -O gut.zip
-          unzip -q gut.zip -d addons/
-          rm gut.zip
+          git clone --quiet --depth 1 --branch ${GUT_VERSION} https://github.com/bitwes/Gut.git addons/gut
 
       - name: Cache Godot import cache
         uses: actions/cache@v4
