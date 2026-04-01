@@ -33,9 +33,7 @@ jobs:
       - name: Install GUT addon
         run: |
           mkdir -p addons
-          curl -L \
-            "https://github.com/bitwes/Gut/releases/download/${GUT_VERSION}/gut_${GUT_VERSION}.zip" \
-            -o gut.zip
+          wget -q "https://github.com/bitwes/Gut/releases/download/${GUT_VERSION}/gut_${GUT_VERSION}.zip" -O gut.zip
           unzip -q gut.zip -d addons/
           rm gut.zip
           ls addons/gut/gut_cmdln.gd   # fail fast if zip layout changed
@@ -119,9 +117,7 @@ jobs:
       - name: Install GUT addon
         run: |
           mkdir -p addons
-          curl -L \
-            "https://github.com/bitwes/Gut/releases/download/${GUT_VERSION}/gut_${GUT_VERSION}.zip" \
-            -o gut.zip
+          wget -q "https://github.com/bitwes/Gut/releases/download/${GUT_VERSION}/gut_${GUT_VERSION}.zip" -O gut.zip
           unzip -q gut.zip -d addons/
           rm gut.zip
 
